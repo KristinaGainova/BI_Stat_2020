@@ -1,0 +1,445 @@
+---
+title: Насколько стара мидия
+output: html_document
+
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message=FALSE, warning=FALSE)
+```
+
+```{r echo = FALSE, eval = TRUE, warning=FALSE, message=FALSE} 
+# function which check if packages are installed (and install if not)
+
+packages = c("tidyverse", "dplyr",
+             "tidyr", "ggplot2", "cowplot", "psych")
+
+## Now load or install&load all
+package.check <- lapply(
+  packages,
+  FUN = function(x) {
+    if (!require(x, character.only = TRUE)) {
+      install.packages(x, dependencies = TRUE)
+      library(x, character.only = TRUE)
+    }
+  }
+)
+
+```
+
+## Описание данных
+
+Данные были получены на моллюсках, для которых определены такие показатели, как число колец, пол (мужская, женская и детская особь), длина моллюска, диаметр, ширина, длина раковины и другие. 
+
+
+```{r echo = FALSE, eval = TRUE} 
+# Create data_frame
+read_all_data <- function(path){
+files <- list.files(path, full.names = T)
+data.list <- lapply(files, read.csv)
+data.cat <- do.call(rbind, data.list)
+return (data.cat)
+}
+path <- 'C:/bioinformatics institute/Statistiks-and-R-programming/Project №1./data'
+data_mussels <- read_all_data(path)
+copy_data_mussels <- data_mussels
+# 1 question
+```
+
+### Разведочный анализ данных (EDA)
+В данном разделе проведен краткий анализ полученных данных:
+
+*  структура данных
+*  проверка корректности данных
+*  распределение значений переменных
+*  визуализация переменных на наличие выбросов
+*  наличие связей между переменными
+
+#### Структура данных
+
+Изучим структуру полученных данных: узнаем число наблюдений, имя, класс и количество переменных.
+
+```{r echo = FALSE, eval = TRUE, message=FALSE, warning=FALSE}
+library(knitr)
+library(magrittr)
+data.frame(variable = names(data_mussels),
+           class = sapply(data_mussels, typeof),
+           first_values = sapply(data_mussels, function(x) paste0(head(x),  collapse = ", ")),
+           row.names = NULL) %>% 
+  kable()
+
+```
+
+Как видно из таблицы, набор данных состоит из 9 переменных, имеющих 4177 наблюдений. Колонки № 1-3 содержат данные типа 'character', колонки № 6-9 -'numeric', содержащие непрерывные величины.
+
+
+#### Проверка корректности данных
+
+Проверим данные на корректность. Для этого найдем значения в колонках № 1-3, не относящиеся к числовым, и заменим их. Для этого воспользуемся двумя функциями 'which' - выводит позицию элементов (номер ряда или столбца), соответсвующих заданному условию, и grepl - ищет совпадения строки или вектора строки, возвращая ИСТИНА, если строка содержит шаблон. Используя эти две функции, найдем строки для каждого из столбцов № 1-3, не содержащих цифры 0-9.
+* Колонка №1:
+
+```{r echo = FALSE, eval = TRUE}
+data_mussels[[1]][which(!grepl('^[0-9]',data_mussels[[1]]))]
+```
+
+* Колонка №2:
+
+```{r echo = FALSE, message=FALSE, warning=FALSE, eval = TRUE}
+data_mussels[[2]][which(!grepl('^[0-9]',data_mussels[[2]]))]
+```
+
+* Колонка №3:
+
+```{r echo = FALSE, eval = TRUE}
+data_mussels[[3]][which(!grepl('^[0-9]',data_mussels[[3]]))] 
+```
+
+Найденные значения заменим на соответствующие им числовые или NA. Изменим название колонки №2 на 'Sex' и значения в колонке приведем к факторному типу с несколькими уровнями (1 - 'male', 2 - 'female', 3 - 'juvenile'). Данные колонок № 1 и 3 преобразуем в тип 'numeric'. 
+
+```{r echo = FALSE, message=FALSE, warning=FALSE, eval = TRUE}
+#Change non-numeric values
+
+col1_rowindex <- which(!grepl('^[0-9]',data_mussels[[1]]))
+col2_rowindex <- which(!grepl('^[0-9]',data_mussels[[2]]))
+col3_rowindex <- which(!grepl('^[0-9]',data_mussels[[3]]))
+
+data_mussels[col1_rowindex,1] <- "9"
+data_mussels[col2_rowindex[2:4],2] <- c("3","1","1")
+data_mussels[col3_rowindex[7],3] <- NA
+
+# Change type of data for column 1-3 and name of variable
+colnames(data_mussels)[2] <- 'Sex'
+data_mussels[,2] <- factor(data_mussels[[2]], labels = c('male','female','juvenile'))
+data_mussels[,1] <- as.numeric(as.character(data_mussels[,1]), na.rm = T)
+data_mussels[,3] <- as.numeric(as.character(data_mussels[,3]), na.rm = T)
+```
+
+После выполненных преобразований проверим данные на присутствие в них пропущенных значений. 
+
+```{r echo = FALSE, message=FALSE, warning=FALSE, eval = TRUE}
+colSums(is.na(data_mussels))
+```
+
+
+Всего было найдено 21 пропущенное значение. Удалим строки с пропущенными значениями из данных. 
+
+```{r echo = FALSE, message=FALSE, warning=FALSE, eval = TRUE}
+data_mussels <- na.omit(data_mussels)
+scaled_df_without_NA <- as.data.frame(scale(data_mussels[,-2]))  # standartisation: 1 - sd, 0 - mean
+```
+
+После различных преобразований наши данные содержат 9 переменных и 4156 значений.
+
+#### Распределение значений переменных
+
+Изучим распределение исследуемых переменных.
+
+```{r echo = FALSE, fig.align = 'center', message=FALSE, warning=FALSE, eval = TRUE}
+theme_set(theme_bw())
+theme_update(plot.title = element_text(hjust = 0.5))
+ggplot(gather(data_mussels[,-2]),aes(value)) + 
+  geom_histogram(bins = 20, show.legend = FALSE, fill = "yellowgreen", col = 'black', density = 20) + ggtitle("Распределение значений количественных переменных") +        
+  labs(x = 'values', y = 'frequency') + theme(text = element_text(size=13)) + 
+      facet_wrap(~key, scales = 'free_x') 
+
+ # geom_vline(xintercept = median(beav$temp), 
+ #             color = "red",
+ #             lty = 2)
+
+```
+
+
+Из приведенных выше графиков видно, что распределение числовых переменных отклоняется от нормального распределения.
+
+#### Визуализация переменных на наличие выбросов.
+
+Для визуализации выбросов используем два способа. Первый способ - построение графиков box-plot.
+
+```{r echo = FALSE, fig.align = 'center', eval = TRUE}
+#Create graphics box-plot
+
+theme_set(theme_bw())
+theme_update(plot.title = element_text(hjust = 0.5)) # title by default is now set to centered
+# 
+# ggplot(gather(scaled_df_without_NA[,-2]), aes(x = key, y = value)) + geom_boxplot() + labs(x = 'Variables', y = 'Value') + ggtitle("Visualisation of outliers in variables") + theme(text = element_text(size=13)) + theme(axis.text.x = element_text(angle = 45 , hjust = 1))
+
+ggplot_rings <- ggplot(data_mussels, aes(Rings)) + 
+  geom_boxplot(fill = "yellowgreen") + 
+  coord_flip() +  
+  labs(y = "Rings", x = "values") 
+  
+  
+ggplot_length <-  ggplot(data_mussels, aes(Length)) + 
+  geom_boxplot(fill = "yellowgreen") + 
+  coord_flip() + 
+  labs(y = "Length", x = "values")  
+
+ggplot_diameter <- ggplot(data_mussels, aes(Diameter)) + 
+  geom_boxplot(fill = "yellowgreen") + 
+  coord_flip() + 
+  labs(y = "Diameter", x = "values")
+
+ggplot_height <- ggplot(data_mussels, aes(Height)) + 
+  geom_boxplot(fill = "yellowgreen") + 
+  coord_flip() + 
+  labs(y = "Height", x = "values")
+
+ggplot_ww<- ggplot(data_mussels, aes(Whole_weight)) + 
+  geom_boxplot(fill = "yellowgreen") + 
+  coord_flip() + 
+  labs(y = "Whole weight", x = "values")
+
+ggplot_sw <- ggplot(data_mussels, aes(Shucked_weight)) + 
+  geom_boxplot(fill = "yellowgreen") + 
+  coord_flip() + 
+  labs(y = "Shucked weight", x = "values")
+
+ggplot_vw <- ggplot(data_mussels, aes(Viscera_weight)) + 
+  geom_boxplot(fill = "yellowgreen") + 
+  coord_flip() + 
+  labs(y = "Viscera weight", x = "values")
+
+ggplot_shell.w <- ggplot(data_mussels, aes(Shell_weight)) + 
+  geom_boxplot(fill = "yellowgreen") + 
+  coord_flip() + 
+  labs(y = "Shell weight", x = "values")
+p <- plot_grid(ggplot_rings, ggplot_length, ggplot_diameter, ggplot_height, ggplot_ww, ggplot_sw, ggplot_vw, ggplot_shell.w)
+
+title <- ggdraw() + draw_label("Визуализация выбросов в переменных", fontface='bold')
+
+plot_grid(title, p, ncol=1, rel_heights=c(0.1, 1))
+```
+
+
+Из диаграммы box-plot видно, что переменная Rings содержит наибольшее число выбросов. Однако в данном случае найденные значения не являются истинными выбросами и исключать их из анализа не следует. Полученный результат свидетельствует о имеющейся неравномерности рапределения данных в переменной Rings, что может быть объяснено дизайном эксперимента.
+
+Альтернативный подход визуализации выбросов - построение точечных диаграмм Кливленда. При использовании диаграммы Кливленда число выбросов значительно меньше.
+
+```{r echo = FALSE, fig.height = 5, fig.align = 'center', eval = TRUE}
+# Scatter plots of Cleveland
+
+
+gg_dot <- ggplot(data_mussels[,-2], aes(y = (1:nrow(scaled_df_without_NA))/1000)) + geom_point() + ylab('index of row') 
+Pl1 <- gg_dot + aes(x = Rings)
+Pl3 <- gg_dot + aes(x = Length)
+Pl4 <- gg_dot + aes(x = Diameter)
+Pl5 <- gg_dot + aes(x = Height)
+Pl6 <- gg_dot + aes(x = Whole_weight)
+Pl7 <- gg_dot + aes(x = Shucked_weight)
+Pl8 <- gg_dot + aes(x = Viscera_weight)
+Pl9 <- gg_dot + aes(x = Shell_weight)
+
+theme_set(theme_bw())
+p <- plot_grid(Pl1,Pl3,Pl4,Pl5,Pl6,Pl7,Pl8,Pl9, ncol = 3, nrow = 3) 
+title <- ggdraw() + draw_label("Визуализация выбросов в переменных", fontface='bold')
+
+plot_grid(title, p, ncol=1, rel_heights=c(0.1, 1))
+#Pl2 <- gg_dot + aes(x = Sex)
+
+```
+
+
+#### Наличие связей между переменными.
+
+Построим диаграмму рассеивания взаимосвязей всех количественных переменных между собой.
+
+```{r echo = FALSE, fig.height = 5, fig.align = 'center', eval = TRUE, message=FALSE, warning=FALSE}
+pairs(data_mussels[,c(1,3:9)])
+```
+
+Из графиков видно, что все количественные переменные имеют взаимосвязь, которая для многих переменных не является линейной. Дополнительно в наличии взаимосвязи можно убедиться, рассчитав коэффициенты корреляции и p-уровень значимости для всех количественных переменных с поправкой на множественное сравнение. Для всех переменных были получены статистически значимые положительные коэффиценты корреляции (коэффициент корреляции более 0.05, p-уровень значимости менее 0.05).
+Из данных теста (данные не приведены) видно, что наиболее сильная связь наблюдается между переменными размера ('Length','Diameter', 'Height') и переменными веса.
+
+```{r echo = FALSE, eval = FALSE}
+# Correlation coefficients
+data <- data_mussels[,c(1,3:9)]
+
+corr_test <- corr.test(data, method = "spearman")
+corr_test$r #correlation
+
+# p value of correlation coefficients
+corr_test$p #p_value
+```
+
+
+```{r echo = FALSE, eval = FALSE}
+# ggplot(data_mussels)+ geom_boxplot()
+#plot(data_mussels$Length, col=as.numeric(data_mussels$Sex))+ legend("topleft", col=1:2, legend=levels(data_mussels$Sex))
+#типо такого графика plot(x, w, pch=as.numeric(sex.f), col=as.numeric(sex.f))
+#legend("topleft", pch=1:2, col=1:2, legend=levels(sex.f)), 
+
+# mean(h, na.rm=TRUE) #высчитать среднее от «не пропущенной» части вектора
+#mean(na.omit(h))
+#h[is.na(h)] <- mean(h, na.rm=TRUE) #заменить все NA на среднюю по выборке
+#  d[order(d$sex, d$height), ] #сортировка по полу а потом по росту
+#apply(trees, 2, mean) - (2) посчитать для каждой колонки, (1) - для каждого ряда
+```
+
+
+### Работа с данными.
+1. Найдём среднее значение и стандартное отклонение переменной Length у моллюсков разного пола
+*  Среднее значение
+```{r echo = FALSE, eval = TRUE}
+mean_Length <- aggregate(Length~Sex,data_mussels, mean, na.rm = T)
+mean_Length
+```
+*  Стандартное отклонение
+```{r echo = FALSE, eval = TRUE}
+sd_Length <- aggregate(Length~Sex,data_mussels, sd, na.rm = T)
+sd_Length
+```
+
+2. Найдём процент моллюсков, у которых значение переменной 'Height' не превышает 0.165. Это значение составляет:
+```{r echo = FALSE, eval = TRUE}
+percent_height <-  round (length(which(data_mussels$Height <= 0.165)) / length(data_mussels$Height) * 100, digits = 2)
+percent_height
+```
+
+3. Найдём значение переменной 'Length', которое больше, чем у 92% от всех наблюдений.
+
+```{r echo = FALSE, eval = TRUE}
+#create vector 'x' with initial data of Length variable. I deleted 7 NA which belongs only to Length. Created vector has 4170 observations. 
+x <- copy_data_mussels$Length
+x[col3_rowindex[7]] <- NA
+x <- as.numeric(as.character(x), na.rm = T)
+x <- na.omit(x)
+quantile_length <- quantile(x, p = seq(0, 1, 0.001))
+quantile_length["92.0%"]
+```
+
+Таким образом 92% наблюдений лежат ниже значения Length = 0.67
+
+4. Создание новой переменной Lenght_z_scores, содержащей значения переменной 'Length' после её стандартизации. Сравним значения переменной 'Length' до и после стандартизации:
+
+```{r echo = FALSE, eval = TRUE}
+#Create new variable Lenght_z_scores after standartisation of Length
+data_mussels$Length_z_scores <- scale(data_mussels$Length)
+head(data_mussels[,c(3,10)])
+```
+
+5. Сравнение диаметра моллюсков с числом колец 5 и 15.
+
+Построим гистограмму распределения переменной 'Diameter' с числом 'Rings' равным 5 и 15 и совестим полученные два графика. Из графика видно, что существует положительная связь между числом 'Rings' и величиной 'Diameters'.
+
+```{r echo = FALSE, fig.align = 'center', eval = TRUE}
+#Comparing diameter of mussels with 5 and 15 Rings
+
+df_Diameter.Rings <- data_mussels %>% filter(Rings == 5) %>% select(Diameter,Rings)
+df_Diameter.Rings <- as.data.frame(rbind(df_Diameter.Rings, data_mussels %>% filter(Rings == 15) %>% select(Diameter,Rings)))
+
+df_five.Rings <- as.numeric(df_Diameter.Rings$Diameter[df_Diameter.Rings$Rings == 5])
+df_fifteen.Rings <- as.numeric(df_Diameter.Rings$Diameter[df_Diameter.Rings$Rings == 15])
+
+hist(df_five.Rings,main= 'Сравнение диаметров мидий с 5 и 15 кольцами',xlab = 'Диаметр', ylab = 'Частота наблюдений', xlim=c(0.1,0.6), col='#0000FF75')
+hist(df_fifteen.Rings, add=T, col='#B2222275',)
+legend('topright',title='Number of rings',c('five','fifteen'),fill=c('#0000FF75','#B2222275'))
+
+# 
+# mean(df_five.Rings)
+# mean(df_fifteen.Rings)
+```
+
+6. Оценка взаимосвязи между переменной 'Diameter' и 'Whole weight'.
+
+Попробуем оценить, существует ли взаимосвязь между переменными 'Diameter' и 'Rings'. На приведенном ниже рисунке прослеживается положительная связь между этими переменными. Вопрос, который нас интересует, состоит в том, насколько сильна эта связь. Для её оценки рассчитаем коэффициент корреляции.
+
+```{r echo = FALSE, fig.align = 'center', eval = TRUE, message=FALSE, warning=FALSE}
+theme_set(theme_bw())
+theme_update(plot.title = element_text(hjust = 0.5)) # title by default is now set to centered
+gg_cor <- ggplot(data_mussels, aes(y = Whole_weight)) + geom_point() + geom_smooth(se = FALSE) + ylab('Whole weight') 
+Pl1 <- gg_cor + aes(x = Diameter)
+p <- plot_grid(Pl1) 
+title <- ggdraw() + draw_label('Статистическая взаимосвязь между переменными Diameter и Whole weight', fontface='bold')
+plot_grid(title, p, ncol=1, rel_heights=c(0.1, 1))
+
+```
+
+Рассчитаем коэффициент корреляции Пирсона для наших переменных. Для этого воспользуемся функцией cor.test(), которая позволяет вычислить коэффициент корреляции и выполняет оценку статистической значимости коэффициента, проверяя нулевую гипотезу о равенстве его нулю. 
+
+```{r echo = FALSE, eval = FALSE, message=FALSE, warning=FALSE}
+cor.test(data_mussels$Diameter, data_mussels$Whole_weight)
+
+```
+Рассчитанный коэффициент корреляции Пирсона оказался высоким (0.925645) и этот коэффициент статистически значимо отличается от нуля (p-value < 2.2e-16), поэтому у нас есть основания отвергнуть нулевую гипотезу о равенстве нулю коэффициента корреляции.
+
+Однако необходимо помнить, что коэффициент корреляции Пирсона основан на следующих важных допущениях:
+*  Обе анализируемые переменные распределены нормально
+*  Связь между этими переменными линейна
+
+Приведенный ниже рисунок показывает, что как минимум в отношении значений переменной 'Whole_weight' условие нормальности распределения не выполняется:
+
+```{r echo = FALSE, fig.align = 'center', eval = TRUE, message=FALSE, warning=FALSE}
+hist(data_mussels$Whole_weight,main= 'Гистограмма переменной Whole weight', col = 'yellowgreen', xlab = 'Whole weight')
+```
+
+Для ненормально распределенных переменных, а также при наличии нелинейной связи между переменными, следует использовать непараметрический коэффициент корреляции Спирмена. В отличие от коэффициента Пирсона, этот вариант коэффициента корреляции работает не с исходными значениями переменных, а с их рангами. 
+
+```{r echo = FALSE, fig.align = 'center', eval = FALSE, message=FALSE, warning=FALSE}
+cor.test(data_mussels$Diameter, data_mussels$Whole_weight, method = "spearman")
+```
+Коэффициент корреляции Спирмена составил 0.9714805 и оказался статистически значимым (Р << 2.2e-16),поэтому у нас есть основания отвергнуть нулевую гипотезу. Признаки зависимы, коэффициент значим.
+Таким образом, рассчитав коэффициенты корреляции Пирсона и Спирмена, мы установили, что между переменными 'Diameter' и 'Whole weight' существует статистически значимая связь.
+
+```{r echo = FALSE, fig.height = 5, fig.align = 'center', eval = FALSE, message=FALSE, warning=FALSE}
+#plot_grid(Pl2, Pl5, ncol = 2)
+#Correlation between 'Whole_weight' and other variables
+# data_without_outliers <- remove_outliers(data_mussels)
+# 
+# 
+# gg_cor <- ggplot(data_mussels, aes(y = Whole_weight)) + geom_point() +geom_smooth(se = FALSE) + ylab('Whole_weight')
+# Pl1 <- gg_cor + aes(x = Rings)
+# Pl3 <- gg_cor + aes(x = Length)
+# Pl4 <- gg_cor + aes(x = Diameter)
+# Pl5 <- gg_cor + aes(x = Height)
+# Pl7 <- gg_cor + aes(x = Shucked_weight)
+# Pl8 <- gg_cor + aes(x = Viscera_weight)
+# Pl9 <- gg_cor + aes(x = Shell_weight)
+# library(cowplot)# package for groupping of graphics
+# theme_set(theme_bw())
+# plot_grid(Pl1,Pl3,Pl4,Pl5,Pl7,Pl8,Pl9, ncol = 2)
+
+```
+
+
+### Модели
+
+При анализе данных было выявлено, что значения переменных вес коррелируют с переменными линейных размеров. Попробуем проверить связь между переменной 'Shell weight' и переменными 'Length' и 'Rings'. При построении модели множественной линейной регрессии получилось уравнение вида:  
+
+Shell_weight = -0.323648084 + 0.008007425 * Rings + 0.921590489 * Length 
+
+Проверим полученную модель на мультиколлинеарность и другие условия применимости.
+
+```{r echo = FALSE, eval = FALSE, message=FALSE, warning=FALSE}
+#delete outliers
+# ind_rings <- which(data_mussels$Rings %in% boxplot.stats(data_mussels$Rings)$out)
+# data_without_outiers <- data_mussels[-ind_rings,] 
+# data_without_outiers <- data_mussels[-ind_rings,] 
+# ind_length <- which(data_without_outiers$Length %in% boxplot.stats(data_without_outiers$Length)$out)
+# data_without_outiers <- data_without_outiers [-ind_length,] 
+# ind_shell_weight <- which(data_without_outiers$Shell_weight %in% boxplot.stats(data_without_outiers$Shell_weight)$out)
+# data_without_outiers <- data_without_outiers [-ind_shell_weight,] 
+
+# y <- lm(Shell_weight ~ Rings + Length, data = data_without_outiers)
+# coef(y)
+# # multicollinearity test 
+# library(car)
+# vif(y)
+# x <- model.matrix(y)
+# head(x)
+# y_diag <- fortify(y)
+# #check influential variables
+# ggplot(y_diag, aes(x = 1:nrow(y_diag), y = .cooksd)) +
+#   geom_bar(stat = 'identity') + coord_cartesian(ylim = c(0,2)) +
+#   geom_line(yintercept = 1, linetype = 2)
+# #graphic of residials
+# gg_resid <- ggplot(data = y_diag, aes(x = .fitted, y = .stdresid))+geom_point() + geom_hline(yintercept = 0) +
+#   geom_smooth()
+# gg_resid
+```
+
+
+
+### Обсуждение
+
+Проанализировав полученные данные можно заметить, что существует взаимосвязь между переменны веса и линейными размерами мидии, которая может быть описана множественной регрессионной моделью. Однако отсутсвие нормальности распределения переменных осложняет использование данного подхода.
+
