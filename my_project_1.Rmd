@@ -1,0 +1,453 @@
+---
+title: Насколько стара мидия
+output: html_document
+
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message=FALSE, warning=FALSE, fig.align = 'center')
+```
+
+```{r eval = TRUE} 
+# function which check if packages are installed (and install if not)
+
+packages = c("tidyverse", "dplyr",
+             "tidyr", "ggplot2", "cowplot", "psych", "car")
+
+## Now load or install&load all
+package.check <- lapply(
+  packages,
+  FUN = function(x) {
+    if (!require(x, character.only = TRUE)) {
+      install.packages(x, dependencies = TRUE)
+      library(x, character.only = TRUE)
+    }
+  }
+)
+
+```
+
+## Description
+
+The data was obtained from mollusk where for every clam was measured such indicators as the number of rings, gender (male, female and juvenile), length of mollusk, diameter, width, length of the shell and others.
+
+```{r echo = FALSE, eval = TRUE} 
+# Create data_frame
+read_all_data <- function(path){
+files <- list.files(path, full.names = T)
+data.list <- lapply(files, read.csv)
+data.cat <- do.call(rbind, data.list)
+return (data.cat)
+}
+path <- 'C:/bioinformatics institute/Statistiks-and-R-programming/Project №1./data'
+data_mussels <- read_all_data(path)
+copy_data_mussels <- data_mussels
+# 1 question
+```
+
+### Exploratory Data Analysis (EDA)
+
+This section provides a brief analysis of the data:
+
+*  data structure
+*  data validation
+*  distribution of variables
+*  visualizing outliers 
+*  the relationships between variables
+
+#### Data structure
+
+Let's study the structure of the received data: define the number of observations, name, class and number of variables.
+
+```{r echo = FALSE, eval = TRUE, message=FALSE, warning=FALSE}
+library(knitr)
+library(magrittr)
+data.frame('variables' = names(data_mussels),
+           'class' = sapply(data_mussels, typeof),
+           'first_values' = sapply(data_mussels, function(x) paste0(head(x),  collapse = ", ")),
+           row.names = NULL) %>% 
+  kable()
+
+```
+
+The dataset consists of 9 numbers with 4177 observations. Columns № 1-3 contain data of type 'character', columns № 6-9 are 'numeric'.
+
+#### Data validation
+
+Let's check the data for correctness. Find the values in columns 1-3, which are not numeric, and replace them. To do this, we will use two functions 'which' - displays the position of elements (row or column number) that match the given condition, and 'grepl' - searches for matches of a string or a vector of a string, returning TRUE if the string contains a pattern. Using these two functions, find the rows for each column № 1-3, which does not contain the digits '0-9'.
+
+* Column №1:
+
+```{r echo = FALSE, eval = TRUE}
+data_mussels[[1]][which(!grepl('^[0-9]',data_mussels[[1]]))]
+```
+
+* Column №2:
+
+```{r echo = FALSE, message=FALSE, warning=FALSE, eval = TRUE}
+data_mussels[[2]][which(!grepl('^[0-9]',data_mussels[[2]]))]
+```
+
+* Column №3:
+
+```{r echo = FALSE, eval = TRUE}
+data_mussels[[3]][which(!grepl('^[0-9]',data_mussels[[3]]))] 
+```
+
+We replace the found values with the corresponding numerical values or NA. Also we will replace the name of column 2 with 'Sex' and the values in the column will be converted to a factor type with several levels (1 - 'male', 2 - 'female', 3 - 'juvenile'). We convert the data of columns 1 and 3 to the 'numeric' type.
+
+```{r echo = FALSE, message=FALSE, warning=FALSE, eval = TRUE}
+#Change non-numeric values
+
+col1_rowindex <- which(!grepl('^[0-9]',data_mussels[[1]]))
+col2_rowindex <- which(!grepl('^[0-9]',data_mussels[[2]]))
+col3_rowindex <- which(!grepl('^[0-9]',data_mussels[[3]]))
+
+data_mussels[col1_rowindex,1] <- "9"
+data_mussels[col2_rowindex[2:4],2] <- c("3","1","1")
+data_mussels[col3_rowindex[7],3] <- NA
+
+# Change type of data for column 1-3 and name of variable
+colnames(data_mussels)[2] <- 'Sex'
+data_mussels[,2] <- factor(data_mussels[[2]], labels = c('male','female','juvenile'))
+data_mussels[,1] <- as.numeric(as.character(data_mussels[,1]), na.rm = T)
+data_mussels[,3] <- as.numeric(as.character(data_mussels[,3]), na.rm = T)
+```
+
+Check the data for missing values.
+
+```{r echo = FALSE, message=FALSE, warning=FALSE, eval = TRUE}
+colSums(is.na(data_mussels))
+```
+
+
+A total number of missing values equal 21. Let's remove rows with missing values from the data. After various transformations, our data contains 9 variables and 4156 values. Let's look at a brief descriptive statistics of the data.
+
+```{r echo = FALSE, message=FALSE, warning=FALSE, eval = TRUE}
+data_mussels <- na.omit(data_mussels)
+scaled_df_without_NA <- as.data.frame(scale(data_mussels[,-2]))  # standartisation: 1 - sd, 0 - mean
+describe(data_mussels)
+```
+
+
+#### Distribution of variables
+
+Let's identify the distributions of quantitative variables using histogram.
+
+```{r eval = TRUE}
+#first
+# theme_set(theme_bw())
+# theme_update(plot.title = element_text(hjust = 0.5))
+# ggplot(gather(data_mussels[,-2]),aes(value)) +
+#   geom_histogram(bins = 20, show.legend = FALSE, fill = "yellowgreen", col = 'black', density = 20) + ggtitle("Распределение значений количественных переменных") +
+#   labs(x = 'values', y = 'frequency') + theme(text = element_text(size=13)) +
+#       facet_wrap(~key, scales = 'free_x')
+
+theme_set(theme_bw())
+theme_update(plot.title = element_text(hjust = 0.5)) # title by default is now set to centered
+
+histogram_rings <- ggplot(data_mussels, aes(Rings)) + 
+  geom_histogram(aes(y = ..density..), colour= "black", fill = "white") +
+  geom_density(fill="blue",alpha =.4,adjust = 5)
+  
+  
+histogram_length <-  ggplot(data_mussels, aes(Length)) + 
+  geom_histogram(aes(y = ..density..), colour= "black", fill = "white") +
+  geom_density(fill="blue",alpha =.4,adjust = 5)
+
+histogram_diameter <- ggplot(data_mussels, aes(Diameter)) + 
+  geom_histogram(aes(y = ..density..), colour= "black", fill = "white") +
+  geom_density(fill="blue",alpha =.4,adjust = 5)
+
+histogram_height <- ggplot(data_mussels, aes(Height))+ 
+  geom_histogram(aes(y = ..density..), colour= "black", fill = "white") +
+  geom_density(fill="blue",alpha =.4,adjust = 5)
+
+histogram_ww<- ggplot(data_mussels, aes(Whole_weight)) + 
+  geom_histogram(aes(y = ..density..), colour= "black", fill = "white") +
+  geom_density(fill="blue",alpha =.4,adjust = 5)
+
+histogram_sw <- ggplot(data_mussels, aes(Shucked_weight)) + 
+  geom_histogram(aes(y = ..density..), colour= "black", fill = "white") +
+  geom_density(fill="blue",alpha =.4,adjust = 5)
+
+histogram_vw <- ggplot(data_mussels, aes(Viscera_weight)) + 
+  geom_histogram(aes(y = ..density..), colour= "black", fill = "white") +
+  geom_density(fill="blue",alpha =.4,adjust = 5)
+
+histogram_shell.w <- ggplot(data_mussels, aes(Shell_weight)) + 
+  geom_histogram(aes(y = ..density..), colour= "black", fill = "white") +
+  geom_density(fill="blue",alpha =.4,adjust = 5)
+p <- plot_grid(histogram_rings, histogram_length, histogram_diameter, histogram_height, histogram_ww, histogram_sw, histogram_vw, histogram_shell.w)
+
+title <- ggdraw() + draw_label("The distributionы of quantitative variables", fontface='bold')
+
+plot_grid(title, p, ncol=1, rel_heights=c(0.1, 1))
+```
+
+
+You can see from the diagrams above that the distribution of quantitative variables deviates from the normal distribution.
+
+#### Visualizing of outliers 
+
+We will use two approaches to visualize outliers. The first way is box-plots.
+
+```{r  eval = TRUE}
+#Create graphics box-plot
+
+theme_set(theme_bw())
+theme_update(plot.title = element_text(hjust = 0.5)) # title by default is now set to centered
+# 
+# ggplot(gather(scaled_df_without_NA[,-2]), aes(x = key, y = value)) + geom_boxplot() + labs(x = 'Variables', y = 'Value') + ggtitle("Visualisation of outliers in variables") + theme(text = element_text(size=13)) + theme(axis.text.x = element_text(angle = 45 , hjust = 1))
+
+ggplot_rings <- ggplot(data_mussels, aes(Rings)) + 
+  geom_boxplot(fill = "lightblue", alpha =.6) + 
+  coord_flip() +  
+  labs(y = "Rings", x = "values") + theme(axis.text.x=element_blank())
+  
+  
+ggplot_length <-  ggplot(data_mussels, aes(Length)) + 
+  geom_boxplot(fill = "lightblue", alpha =.6) + 
+  coord_flip() + 
+  labs(y = "Length", x = "values") + theme(axis.text.x=element_blank()) 
+
+ggplot_diameter <- ggplot(data_mussels, aes(Diameter)) + 
+  geom_boxplot(fill = "lightblue", alpha =.6) + 
+  coord_flip() + 
+  labs(y = "Diameter", x = "values") + theme(axis.text.x=element_blank())
+
+ggplot_height <- ggplot(data_mussels, aes(Height)) + 
+  geom_boxplot(fill = "lightblue", alpha =.6) + 
+  coord_flip() + 
+  labs(y = "Height", x = "values") + theme(axis.text.x=element_blank())
+
+ggplot_ww<- ggplot(data_mussels, aes(Whole_weight)) + 
+  geom_boxplot(fill = "lightblue", alpha =.6) + 
+  coord_flip() + 
+  labs(y = "Whole weight", x = "values") + theme(axis.text.x=element_blank())
+
+ggplot_sw <- ggplot(data_mussels, aes(Shucked_weight)) + 
+  geom_boxplot(fill = "lightblue", alpha =.6) + 
+  coord_flip() + 
+  labs(y = "Shucked weight", x = "values") + theme(axis.text.x=element_blank())
+
+ggplot_vw <- ggplot(data_mussels, aes(Viscera_weight)) + 
+  geom_boxplot(fill = "lightblue", alpha =.6) + 
+  coord_flip() + 
+  labs(y = "Viscera weight", x = "values") + theme(axis.text.x=element_blank())
+
+ggplot_shell.w <- ggplot(data_mussels, aes(Shell_weight)) + 
+  geom_boxplot(fill = "lightblue", alpha =.6) + 
+  coord_flip() + 
+  labs(y = "Shell weight", x = "values") + theme(axis.text.x=element_blank())
+p <- plot_grid(ggplot_rings, ggplot_length, ggplot_diameter, ggplot_height, ggplot_ww, ggplot_sw, ggplot_vw, ggplot_shell.w,ncol = 8)
+
+title <- ggdraw() + draw_label("Visualizing of outliers ", fontface='bold')
+
+plot_grid(title, p, ncol = 1, rel_heights=c(0.1, 1))
+```
+
+
+It can be seen from the box-plot that the variables in the data contain outliers, which can be explained by the design of the experiment. Mussels growing in different climates have different sizes, so those mussels that are significantly different from the average of group will be considered as outliers.
+
+An alternative approach to visualizing outliers is using Cleveland scatter plots. When using the Cleveland chart, the number of outliers is significantly less.
+
+```{r echo = FALSE, fig.height = 5, fig.align = 'center', eval = TRUE}
+# Scatter plots of Cleveland
+
+
+gg_dot <- ggplot(data_mussels[,-2], aes(y = (1:nrow(scaled_df_without_NA))/1000)) + geom_point() + ylab('index of row') 
+Pl1 <- gg_dot + aes(x = Rings)
+Pl3 <- gg_dot + aes(x = Length)
+Pl4 <- gg_dot + aes(x = Diameter)
+Pl5 <- gg_dot + aes(x = Height)
+Pl6 <- gg_dot + aes(x = Whole_weight)
+Pl7 <- gg_dot + aes(x = Shucked_weight)
+Pl8 <- gg_dot + aes(x = Viscera_weight)
+Pl9 <- gg_dot + aes(x = Shell_weight)
+
+theme_set(theme_bw())
+p <- plot_grid(Pl1,Pl3,Pl4,Pl5,Pl6,Pl7,Pl8,Pl9, ncol = 3, nrow = 3) 
+title <- ggdraw() + draw_label("Visualizing of outliers ", fontface='bold')
+
+plot_grid(title, p, ncol=1, rel_heights=c(0.1, 1))
+#Pl2 <- gg_dot + aes(x = Sex)
+
+```
+
+
+#### The relationships between variables
+
+Let's build a scatter diagram of the relationships of all quantitative variables with each other.
+
+```{r eval = TRUE}
+library(car)
+
+pairs(data_mussels[,c(1,3:9)])
+```
+
+The graphs show that all quantitative variables have a relationship that in most cases is not linear. Additionally, the relationship can be verified by calculating the correlation coefficients and p-level of significance for all quantitative variables, adjusted for multiple comparisons. Statistically significant positive correlation coefficients were obtained for all variables (p-level of significance less than 0.05).
+From the test data (data not shown) it can be seen that the strongest relationship is observed between the size variables ('Length', 'Diameter', 'Height') and weight variables.
+
+```{r echo = FALSE, eval = FALSE}
+# Correlation coefficients
+data <- data_mussels[,c(1,3:9)]
+
+corr_test <- corr.test(data, method = "spearman")
+corr_test$r #correlation
+
+# p value of correlation coefficients
+corr_test$p #p_value
+```
+
+
+### Data analysis
+
+1. Find the mean and standard deviation of the Length variable in mollusks of different sexes
+
+*  Mean
+
+```{r echo = FALSE, eval = TRUE}
+mean_Length <- aggregate(Length~Sex,data_mussels, mean, na.rm = T)
+mean_Length
+```
+
+*  Standard deviation
+
+```{r echo = FALSE, eval = TRUE}
+sd_Length <- aggregate(Length~Sex,data_mussels, sd, na.rm = T)
+sd_Length
+```
+
+2. Find the percentage of mollusks for which the value of the 'Height' variable does not exceed 0.165. This value is:
+
+```{r echo = FALSE, eval = TRUE}
+percent_height <-  round (length(which(data_mussels$Height <= 0.165)) / length(data_mussels$Height) * 100, digits = 2)
+percent_height
+```
+
+3. Find the value of the 'Length' variable, which is greater than 92% of all observations.
+
+```{r echo = FALSE, eval = TRUE}
+#create vector 'x' with initial data of Length variable. I deleted 7 NA which belongs only to Length. Created vector has 4170 observations. 
+x <- copy_data_mussels$Length
+x[col3_rowindex[7]] <- NA
+x <- as.numeric(as.character(x), na.rm = T)
+x <- na.omit(x)
+quantile_length <- quantile(x, p = seq(0, 1, 0.001))
+quantile_length["92.0%"]
+```
+
+Thus, 92% of observations lie below Length = 0.67
+
+4. Creation of a new variable Lenght_z_scores containing the values of the variable 'Length' after its standardization. Let's compare the values of the 'Length' variable before and after standardization:
+
+```{r echo = FALSE, eval = TRUE}
+#Create new variable Lenght_z_scores after standartisation of Length
+data_mussels$Length_z_scores <- scale(data_mussels$Length)
+head(data_mussels[,c(3,10)])
+```
+
+5. Comparison of the diameter of mollusks with the number of rings 5 and 15.
+
+Let's compare the diameters of mollusks with the number of rings equal to 5 or 15. To do this, let's look at the distribution of data in two samples.
+
+```{r echo = FALSE, fig.align = 'center', eval = TRUE}
+df_Diameter_Rings <- data_mussels %>% filter(Rings == 5) %>% select(Diameter,Rings)
+df_Diameter_Rings <- as.data.frame(rbind(df_Diameter_Rings, data_mussels %>% filter(Rings == 15) %>% select(Diameter,Rings)))
+df_Diameter_Rings[[2]] <- factor(df_Diameter_Rings[[2]], labels = c('5','15'))
+
+diameter_five_rings <- df_Diameter_Rings[(which(df_Diameter_Rings$Rings == 5)),1]
+diameter_fifteen_rings <- df_Diameter_Rings[(which(df_Diameter_Rings$Rings == 15)),1]
+  
+hist(diameter_five_rings, breaks = 20, freq = FALSE, col = "lightblue",
+      xlab = "Diameter",
+      ylab = "Probability density",
+      main = "Histogram of the diameter distribution of mussels with 5 rings")
+lines(density(diameter_five_rings), col = "red", lwd = 2)
+
+hist(diameter_fifteen_rings, breaks = 20, freq = FALSE, col = "lightblue",
+      xlab = "Diameter",
+      ylab = "Probability density",
+      main = "Histogram of the diameter distribution of mussels with 5 rings")
+lines(density(diameter_fifteen_rings), col = "red", lwd = 2)
+
+```
+
+It can be seen from the graphs above that the distribution of features differs from normal. In this regard, to test the hypothesis that there is no difference in the diameters of mollusks with 5 and 15 rings, we will use a nonparametric analogue of the t-test (Mann - Whitney U-test).
+According to the obtained p-value (p-value <2.2e-16), the diameters of mollusks from different groups are statistically significantly different. 
+
+```{r echo = FALSE, eval = FALSE}
+
+wilcox.test(Diameter~Rings,df_Diameter_Rings,paired = FALSE)
+```
+
+Let's build box-plot plots for two groups.
+
+```{r echo = FALSE, fig.align = 'center', eval = TRUE}
+x <- df_Diameter_Rings[(which(df_Diameter_Rings$Rings == 5)),1]
+y <- df_Diameter_Rings[(which(df_Diameter_Rings$Rings == 15)),1]
+boxplot(x,y,names = c('5 rings','15 rings'),main='Diameter of mussels with the number of rings 5 and 15', ylab = 'Diameter', col = c('lightblue','lightgreen'))
+```
+
+It can be seen from the graph above that the average diameter of mussels with the number of rings of 5 and 15 differs. In addition it can be seen that the mussels with a large number of rings have a larger diameter.
+If we consider the sex distribution, it turns out that young individuals mainly have small number of rings, while males and females have the number of rings equal to 15.
+
+```{r echo = FALSE, fig.align = 'center', eval = TRUE}
+plot(data_mussels[which(data_mussels$Rings == 5),2], main = "The sex ratio in mussels with the number of rings equal 5", xlab = "Sex",
+     ylab = "Number of mussels", col =  c('lightblue','lightgrey','lightgreen'))
+plot(data_mussels[which(data_mussels$Rings == 15),2], main = "The sex ratio in mussels with the number of rings equal 15", xlab = "Sex",
+     ylab = "Number of mussels", col =  c('lightblue','lightgrey','lightgreen'))
+# data_mussels[which(data_mussels$Rings == 15),2]
+
+```
+
+
+6. Assessment of the relationship between the variable 'Diameter' and 'Whole weight'.
+
+Let's try to evaluate if there is a relationship between the 'Diameter' and 'Rings' variables. The figure below shows a positive relationship between these variables. 
+
+```{r echo = FALSE, fig.align = 'center', eval = TRUE, message=FALSE, warning=FALSE}
+theme_set(theme_bw())
+theme_update(plot.title = element_text(hjust = 0.5)) # title by default is now set to centered
+gg_cor <- ggplot(data_mussels, aes(y = Whole_weight)) + geom_point() + geom_smooth(se = FALSE) + ylab('Whole weight') 
+Pl1 <- gg_cor + aes(x = Diameter)
+p <- plot_grid(Pl1) 
+title <- ggdraw() + draw_label('Statistical Relationship Between Diameter and Whole Weight Variables', fontface='bold')
+plot_grid(title, p, ncol=1, rel_heights=c(0.1, 1))
+
+```
+
+To assess the strength of the relationship between the two variables, we calculate the Pearson correlation coefficient. To do this, we will use the cor.test () function, which calculates the correlation coefficient and evaluates the statistical significance of the coefficient, checking the null hypothesis that the correlation coefficient is zero.
+
+```{r echo = FALSE, eval = FALSE, message=FALSE, warning=FALSE}
+cor.test(data_mussels$Diameter, data_mussels$Whole_weight)
+
+```
+The calculated Pearson correlation coefficient turned out to be high (0.925645) and this coefficient is statistically significantly different from zero (p-value <2.2e-16), so we have reason to reject the null hypothesis that the correlation coefficient is zero.
+
+However, it must be remembered that Pearson's correlation coefficient is based on the following important assumptions:
+* Both analyzed variables are normally distributed
+* The relationship between these variables is linear
+
+The figure below shows that the 'Whole_weight' variable doesn't have the normal distribution:
+
+```{r echo = FALSE, fig.align = 'center', eval = TRUE, message=FALSE, warning=FALSE}
+hist(data_mussels$Whole_weight,main= 'Hostogram of Whole weight variable', col = 'yellowgreen', xlab = 'Whole weight')
+```
+
+For abnormally distributed variables, as well as in the presence of a nonlinear relationship between variables, the nonparametric Spearman correlation coefficient should be used. Unlike Pearson's coefficient, this version of the correlation coefficient works not with the initial values of the variables, but with their ranks.
+
+```{r echo = FALSE, fig.align = 'center', eval = FALSE, message=FALSE, warning=FALSE}
+cor.test(data_mussels$Diameter, data_mussels$Whole_weight, method = "spearman")
+```
+
+Spearman's correlation coefficient is 0.9714805 and statistically significant (P << 2.2e-16), so we have reason to reject the null hypothesis. The signs are dependent, the coefficient is significant.
+Thus, after calculating the correlation coefficients of Pearson and Spearman, we found that there is a statistically significant relationship between the variables 'Diameter' and 'Whole weight'.
+
+
+### Discussion and conclusions
+
+In this work a dataset was obtained, consisting of 10 variables and 4156 observations. Inaccuracies were found and corrected in the data, lines with missing values were removed, outliers were identified using boxplot and Cleveland plots, and analysis of the data showed that the distribution of values of many variables deviated from the normal. It has also been shown that there is a relationship between all quantitative variables.
+Data analysis showed a strong relationship between weight variables and linear dimensions of the mussel, which can be described by a regression model with multiple predictors.
+ 
