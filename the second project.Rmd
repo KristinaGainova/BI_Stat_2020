@@ -1,0 +1,254 @@
+---
+title: "Project 2"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message=FALSE, warning=FALSE, fig.align = 'center')
+```
+
+
+```{r eval = TRUE} 
+# function which check if packages are installed (and install if not)
+
+packages = c("MASS","ggplot2","corrplot","car","dplyr")
+
+## Now load or install&load all
+package.check <- lapply(
+  packages,
+  FUN = function(x) {
+    if (!require(x, character.only = TRUE)) {
+      install.packages(x, dependencies = TRUE)
+      library(x, character.only = TRUE)
+    }
+  }
+)
+
+```
+
+## Data
+The Boston Housing Dataset consists of price of houses in various places in Boston. Alongside with price, the dataset also provide information such as Crime (CRIM), areas of non-retail business in the town (INDUS), the age of people who own the house (AGE), and there are many other attributes.We have descriptions and summaries of predictors as follow:
+
+* **crim**: per capita crime rate by town.
+* **zn**: proportion of residential land zoned for lots over 25,000 sq.ft.
+* **indus**: proportion of non-retail business acres per town.
+* **chas**: Charles River dummy variable (= 1 if tract bounds river; 0 otherwise).
+* **nox**: nitrogen oxides concentration (parts per 10 million).
+* **rm**: average number of rooms per dwelling.
+* **age**: proportion of owner-occupied units built prior to 1940.
+* **dis**: weighted mean of distances to five Boston employment centres.
+* **rad**: index of accessibility to radial highways.
+* **tax**: full-value property-tax rate per $10,000.
+* **ptratio**: pupil-teacher ratio by town.
+* **black**: 1000(Bk - 0.63)^2 where Bk is the proportion of blacks by town.
+* **lstat**: lower status of the population (percent).
+* **medv**: median value of owner-occupied homes in $1000s.
+
+## Objective
+
+The prime objective of this project is to construct a working model which has the capability of predicting the value of houses, we will need to separate the dataset into features and the target variable. The target variable, ‘MEDV’, will be the variable we seek to predict. 
+
+## Explore Data
+Let's see the data structure.
+
+```{r}
+glimpse(Boston)
+#dim(Boston)
+```
+
+The Dataset includes 14 variables and 506 observations.
+The first six rows of dataframe:
+
+```{r}
+head(Boston)
+```
+
+Summary statistics:
+
+```{r}
+summary(Boston)
+```
+
+This table consists of 2 categorical variables ‘chas’ and ‘rad’. 
+
+```{r}
+ftable(chas ~ rad, data = Boston)
+```
+
+Check for missing values:
+
+```{r}
+sum(is.na(Boston))
+```
+
+Check for duplicated values
+
+```{r}
+sum(duplicated(Boston))
+```
+
+There are no missing or duplicate values.
+
+## House pricing
+
+Let's build histogram of distribution of median house pricing.
+
+```{r}
+hist(Boston$medv,xlab="Median Value", ylab = "Number", main="House Pricing", col="lightgreen")
+
+```
+
+
+## Correlation
+
+A few important properties to check now are the correlation of input features with the dependent variable, and to check if any feature has near zero variance (values not varying much within the column).
+
+```{r}
+cor_table <- cor(Boston,Boston$medv)
+colnames(cor_table) <- 'medv'
+ftable(cor_table)
+```
+
+We see that the number of rooms (rm) has the strongest positive correlation with the median value of the housing price, while the percentage of lower status population (lstat) and the pupil-teacher ratio (ptratio) have strong negative correlation. The feature with the least correlation to MV is the proximity to charles river (chas).
+
+In addition we can see correlations between variables with correlation matrix plot:
+
+```{r}
+corr_matrix<-cor(Boston)
+corrplot(corr_matrix, type="upper", diag = FALSE)
+```
+
+From correlation matrix, some of the observations made are as follows:
+
+*  Median value of owner-occupied homes (in 1000$) increases as average number of rooms per dwelling increases and it decreases if percent of lower status population in the area increases
+*  nox or nitrogen oxides concentration (ppm) increases with increase in proportion of non-retail business acres per town and proportion of owner-occupied units built prior to 1940.
+*  rad and tax have a strong positive correlation of 0.91 which implies that as accessibility of radial highways increases, the full value property-tax rate per $10,000 also increases.
+*  crim is strongly associated with variables rad and tax which implies as accessibility to radial highways increases, per capita crime rate increases.
+*  indus has strong positive correlation with nox, which supports the notion that nitrogen oxides concentration is high in industrial areas.
+
+## Fitting multiple linear model
+
+Let's build a complete linear model. As you can see full model includes some insignificant predictors (p value > 0.05). There are some problems which can be caused by selecting too many variables for a model: entering too many variables reduces the statistical power and increases the chances of error.Furthermore, it should check for multicollinearity in the model, as a strong correlation between any two variables will mask the true effect of both those variables.
+
+```{r}
+data <- Boston
+full_model <- lm(medv ~ ., data = data)
+summary(full_model)
+```
+
+The variables in the dataset are measured in different values. In order to determine which predictor most strongly influences the average cost of housing, it is necessary to standardize the data. The coefficients in front of the predictors will be measured in standard deviations and can be compared. All varisbles in dataset (except 'chas' and 'rad', these variables we will transform into Factor) were been standartised.
+
+In the model below, the most influential predictor is 'lstat' (**-0.407447**).
+
+```{r}
+data_scale <- data
+data_scale[,-c(4,9)] <- as.data.frame(sapply(data[,-c(4,9)], scale))
+full_model_scale <- lm(medv ~ ., data = data_scale)
+summary(full_model_scale)
+```
+
+## Regression diagnostic
+
+Let's conduct regression diagnostics to evaluate the model assumptions and investigate whether or not there are observations with a large, undue influence on the analysis.
+
+### Cook's distance graph
+
+No value exceeds the conventional threshold of 2 units. No influential observations.
+
+```{r}
+model_diag <- fortify(full_model)
+ggplot(model_diag, aes(x = 1:nrow(model_diag), y = .cooksd)) + 
+  geom_bar(stat = "identity") + 
+  geom_hline(yintercept = 0.2, color = "red")
+```
+
+### Plot of model residuals versus predicted values
+
+You can observe nonlinearity on the graphic below. There are observations outside +/- 2 standard deviation zone. No heteroscedasticity (funnel-shaped pattern) was found. 
+
+```{r}
+gg_resid <- ggplot(data = model_diag, aes(x = .fitted, y = .stdresid)) + 
+  geom_point() + 
+  geom_hline(yintercept = 0)+
+  geom_hline(yintercept = 2, color = "red") +
+  geom_hline(yintercept = -2, color = "red")
+
+gg_resid  
+```
+
+### Checking for normal distribution
+
+QQPlot graphic shows there are some deviations from normality of fitted values.
+
+```{r}
+qqPlot(model_diag$.fitted)
+```
+
+Testing for Normality. Graphics of residuals and shapiro.test show that distribution of model residuals deviates from normal.
+
+```{r}
+hist(full_model$residuals, col = 'lightgreen',main = 'Histogram of full model residuals',xlab = 'residuals')
+qqnorm(full_model$residuals,ylab = 'residuals')
+shapiro.test(full_model$residuals)
+```
+
+Multicollinearity is the correlation of independent variables, which makes it difficult to assess and analyze the overall result. Multicollinearity can cause the model to overfit, leading to an incorrect result. Check multicollinearity:
+
+```{r}
+vif(full_model)
+```
+All variables with vif more 2 should be ecluded from the model.
+
+Thus the conditions of applicability of the regression model were violated. We cannot believe the predictions of this model. It needs to improve and select more optimal model.
+
+```{r}
+mydata <- data.frame(
+  lstat = seq(min(data$lstat), max(data$lstat), length.out = 100),
+  crim = mean(data$crim),
+  zn = mean(data$zn),
+  indus = mean(data$indus),
+  chas = mean(data$chas),
+  nox = mean(data$nox),
+  rm = mean(data$rm),
+  age = mean(data$age),
+  dis = mean(data$dis),
+  rad = mean(data$rad),
+  tax = mean(data$tax),
+  ptratio = mean(data$ptratio),
+  black = mean(data$black))
+  
+
+Predictions <- predict(full_model, newdata = mydata,  interval = 'confidence')
+mydata <- data.frame(mydata, Predictions)
+
+Pl_predict <- ggplot(mydata, aes(x = lstat, y = fit)) +
+  geom_ribbon(alpha = 0.2, aes(ymin = lwr, ymax = upr)) +
+  geom_line() + 
+  ggtitle("Multiple model")
+Pl_predict 
+```
+
+Full model:
+
+medv = 36,4 - 0.1 * crim + 0.046 * zn + 0.021 * indus + 0.027 * chas - 0.18 * nox + 3.8 * rm + 0.0007 * age -1.47 * dis + 0.31 * rad -0.01 * tax -0.95 * ptratio + 0.009 * black -0.5 *lstat
+
+
+
+```{r}
+#select optimal model
+# vif(full_model) # full model
+# model_1 <- update(full_model,~.-tax-rad)
+# vif(model_1)
+# model_2 <- update(model_1,~.-dis-nox-indus)
+# vif(model_2)
+# model_3 <- update(model_2,~.-lstat)
+# vif(model_3)
+# 
+# final_model <- lm(medv ~ crim + zn + chas+ rm + age + ptratio + black, data = data)
+# summary(final_model)
+```
+ 
+
+
+
+
