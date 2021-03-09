@@ -180,18 +180,18 @@ summary(cox)
 Visualization of model summary.
 
  
-```{r}
+```{r message=FALSE, warning=FALSE}
 cox_fit <- survfit(cox)
 autoplot(cox_fit)
 ```
  
-```{r}
+```{r message=FALSE, warning=FALSE}
 aa_fit <- aareg(Surv(futime, fustat) ~ rx + age + resid.ds + ecog.ps , data = data)
 autoplot(aa_fit)
 ```
 Then we will build Cox proportional hazards model using the `coxph function`. To visualize model we will use the `ggforest`. 
 
-```{r}
+```{r message=FALSE, warning=FALSE}
 fit.coxph <- coxph(Surv(futime, fustat) ~ rx + age_group + resid.ds + ecog.ps, data = data_hyb)
 ggforest(fit.coxph, data = data_hyb)
 ```
