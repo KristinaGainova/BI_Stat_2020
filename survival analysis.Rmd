@@ -1,0 +1,202 @@
+---
+title: "Survival analysis"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+library(survival)
+library(survminer)
+library(ggplot2)
+library(ggfortify)
+library(coin)
+theme_set(theme_bw())
+library(dplyr)
+
+```
+
+# Survival analysis of ovarian dataset 
+
+In this project we will conducted survival analysis of **_ovarian dataset_** from **survival** package. The dataset includes information about patients with ovarian cancer and clinical information, including the time that patients were tracked until they died or were lost to follow-up, age of the patient, prescription of the treatment group, presence of residual disease, where patients were censored or not,  and working performance.
+  
+Let's start with short EDA.  
+  
+
+## EDA
+
+Let's see the structure of the dataset. 
+
+```{r message=FALSE, warning=FALSE}
+data <- ovarian
+glimpse(ovarian)
+```
+
+Description for each variable:  
+  
+*  **futime:**	survival or censoring time (the time patients were tracked until they either died or were lost to follow-up)  
+*  **fustat:**	censoring status  
+*  **age:**	in years  
+*  **resid.ds:**	residual disease present (1=no,2=yes)  
+*  **rx:**	treatment group  
+*  **ecog.ps:**	ECOG performance status (1 is better, see reference)  
+  
+
+This dataset has 6 numerical variables: **`r colnames(data)`**  with **`r nrow(data)`** observations in each column. Thus 26 patients were involved in the experiment. Also we see that variables **rx**, **resid.ds** and **ecog.ps** have two levels. Thus it is required to convert the values to factor type. We convert variable `rx` (treatment group) to factor with labels "A" and "B", `resid.ds` (residual disease present), where 1 - "no" and 2 - "yes", `ecog.ps` (ECOG performance status), where 1 - good, 2 - bad.
+
+
+```{r message=FALSE, warning=FALSE}
+data$rx <- factor(data$rx, 
+                     levels = c("1", "2"), 
+                     labels = c("A", "B"))
+data$resid.ds <- factor(data$resid.ds, 
+                           levels = c("1", "2"), 
+                           labels = c("no", "yes"))
+data$ecog.ps <- factor(data$ecog.ps, 
+                          levels = c("1", "2"), 
+                          labels = c("good", "bad"))
+```
+
+The dataset doesn't have missing values.
+
+```{r message=FALSE, warning=FALSE}
+sum(!complete.cases(data))
+```
+
+Let us look at the overall distribution of age values.  
+**_Fig. 1_**
+
+
+```{r message=FALSE, warning=FALSE}
+hist(ovarian$age, col = 'green', main = 'Histogram of the overall distribution of age value', xlab = "age")
+```
+
+It seems that data has a bimodal distribution. We can divide patients into two groups: more 50 age and less.
+
+## The Kaplan Meier Curves
+  
+The Kaplan–Meier estimator is a non-parametric statistic used to estimate the survival function from lifetime data. In medical research, it is often used to measure the fraction of patients living for a certain amount of time after treatment.  
+
+We get survival timeline.  
+
+```{r message=FALSE, warning=FALSE}
+km <- with(data, Surv(futime, fustat))
+head(km,26)
+```
+
+Next, we build a linear model that accounts for the factor-based change in survival over time.
+
+```{r message=FALSE, warning=FALSE}
+km_fit <- survfit(Surv(futime, fustat) ~ 1, data=data)
+summary(km_fit, times = c(1,30,60,90*(1:10)))
+```
+
+```{r message=FALSE, warning=FALSE}
+autoplot(km_fit)
+
+```
+  
+Let's see how the type of treatment affects survival. We see that treatment 2 (B) had a greater impact on patients. However it seems that differences are not very significant. To check it we will use log-rank test later.
+
+```{r message=FALSE, warning=FALSE}
+km_rx_fit <- survfit(Surv(futime, fustat) ~ rx, data=data)
+autoplot(km_rx_fit, main= "Impact of the type of treatment on survival")
+```
+Do the same for variables `ecog.ps` and `resid.ds`.  
+For variable `ecog.ps`. It is difficult to assess the influence of the factor on survival. However it seems that patients with "status 2" have a lower survival compared with patients with "status 1" (by the end of period).
+
+```{r message=FALSE, warning=FALSE}
+km_ecogPs_fit <- survfit(Surv(futime, fustat) ~ ecog.ps, data=data)
+autoplot(km_ecogPs_fit, main= "Impact of ECOG status on survival")
+```
+  
+For variabe `resid.ds`. We see on the plot that patients without residual disease show the best survival rate.
+  
+```{r message=FALSE, warning=FALSE}
+km_residDs_fit <- survfit(Surv(futime, fustat) ~ resid.ds, data=data)
+autoplot(km_residDs_fit, main= "Impact of residual disease status on survival")
+```
+
+In addition we will divide patients by age, into those who are under 50 years old and over 50 years old. It can be noted that the probability of living more than a year in patients aged less than 50 years is higher than in older patients.
+ 
+```{r message=FALSE, warning=FALSE}
+data <- data %>% mutate(age_group = ifelse(age >=50, "old", "young"))
+data$age_group <- factor(data$age_group)
+
+km_age_fit <- survfit(Surv(futime, fustat) ~ age_group, data=data)
+autoplot(km_age_fit, main= "Impact of patient age on survival")
+```
+
+Also it is interesting to see how both factors impact on survival. 
+
+
+```{r message=FALSE, warning=FALSE}
+data_hyb <- data
+data_hyb$hybrid_var <- paste(data_hyb$age_group, data_hyb$rx) #influence of two factors age and rx
+data_hyb$hybrid_var <- factor(data_hyb$hybrid_var)
+data_hyb %>% filter(!is.na(hybrid_var))
+summary(data_hyb$hybrid_var) # Count number of patients per group.
+```
+```{r message=FALSE, warning=FALSE}
+km_hybrid_var <- survfit(Surv(futime, fustat) ~ hybrid_var, data=data_hyb)
+# autoplot(km_hybrid_var, main = "Impact of patient age and treatment on survival")
+
+```
+
+## Long-rank tests, group comparison
+  
+Another method for assessing survival is the log-rank test. It allows you to compare whether there is a difference in survival between groups. For this purpose we will use `survdiff` function. Previously we weren't sure about result of survival curve where we assessed impact of the type of treatment on survival.
+
+```{r}
+survdiff(Surv(futime, fustat) ~ rx, data = data)
+```
+ In order to dispel doubts, we will perform a log rank test. We will use `longrank_test` (package coin) to answer the question 'whether the survival rate differ in dependence of type of treatment'. We see that there is not a statistical significant differences between the groups.  
+ 
+```{r}
+logrank_test(Surv(futime, fustat) ~ rx, data = data)
+
+```
+
+Groups with ECOG status 1 and 2 don't show significant differences in survival:  
+
+```{r}
+logrank_test(Surv(futime, fustat) ~ ecog.ps, data = data)
+```
+
+
+
+For residual disease status groups. There is no significant differences in surviving between groups too.
+
+```{r}
+logrank_test(Surv(futime, fustat) ~ resid.ds, data = data)
+```
+## Assessment of risk factors (Cox model)
+  
+The Cox proportional-hazards model (Cox, 1972) is essentially a regression model commonly used statistical in medical research for investigating the association between the survival time of patients and one or more predictor variables.  
+```{r}
+cox <- coxph(Surv(futime, fustat) ~ rx + age + resid.ds + ecog.ps , data = data)
+summary(cox)
+```
+
+Visualization of model summary.
+
+ 
+```{r}
+cox_fit <- survfit(cox)
+autoplot(cox_fit)
+```
+ 
+```{r}
+aa_fit <- aareg(Surv(futime, fustat) ~ rx + age + resid.ds + ecog.ps , data = data)
+autoplot(aa_fit)
+```
+Then we will build Cox proportional hazards model using the `coxph function`. To visualize model we will use the `ggforest`. 
+
+```{r}
+fit.coxph <- coxph(Surv(futime, fustat) ~ rx + age_group + resid.ds + ecog.ps, data = data_hyb)
+ggforest(fit.coxph, data = data_hyb)
+```
+
+
+We see that patients who received type of treatment 2 (B) have less death risk, than second group (who received treatment 1 - A). Also older patients (less 50 years) have less risks. ECOG (2, bad) of patients demonstrated increased risk. And finally,residual disease present variable has statistical significant influence, patients with status 2 (yes) have more risk of death that with status 1 (no). 
+
+
